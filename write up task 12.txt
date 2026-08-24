@@ -1,0 +1,99 @@
+
+Task 12 – Simple Write-up
+1. What is React Context API and why is it better than prop drilling for the cart?
+
+React Context API is used to share data between components without passing props through many components.
+
+For my cart, I use Context API to share cart items and cart functions with different components.
+
+Example:
+
+const { cart, addToCart, removeFromCart } = useContext(CartContext);
+
+It is better than prop drilling because I don't need to pass cart data from one component to another again and again.
+
+
+
+
+2. Why does order_items store unit_price?
+
+order_items stores unit_price because the product price can change later.
+
+For example:
+
+Product price when ordered = ₹1000
+New product price later = ₹1500
+
+The old order should still show ₹1000.
+
+My backend stores the price when the order is placed:
+
+cursor.execute(
+    """
+    INSERT INTO order_items
+    (order_id, product_id, quantity, unit_price)
+    VALUES (%s, %s, %s, %s)
+    """,
+    (order_id, product_id, quantity, product["price"])
+)
+
+So the old order price remains unchanged.
+
+
+
+
+
+
+3. What happens if the customer orders 10 units but only 3 are available?
+
+The backend checks the stock before placing the order.
+
+The validation code is:
+
+if product["stock"] < quantity:
+    return jsonify({
+        "error": f"Insufficient stock for '{product['name']}'. "
+                 f"Available: {product['stock']}, Requested: {quantity}"
+    }), 400
+
+If the customer orders 10 but only 3 are available, the order is rejected.
+
+The customer gets an error like:
+
+Insufficient stock. Available: 3, Requested: 10
+
+
+
+
+4. Difference between ProtectedRoute and AdminRoute
+
+ProtectedRoute checks whether the user is logged in.
+
+function ProtectedRoute({ children }) {
+  const { user } = useAuth();
+
+  if (!user) {
+    return <Navigate to="/login" />;
+  }
+
+  return children;
+}
+
+AdminRoute checks whether the user is logged in and is an admin.
+
+function AdminRoute({ children }) {
+  const { user } = useAuth();
+
+  if (!user) {
+    return <Navigate to="/login" />;
+  }
+
+  if (user.role !== "admin") {
+    return <Navigate to="/" />;
+  }
+
+  return children;
+}
+In simple words:
+ProtectedRoute → Only logged-in users can enter.
+AdminRoute → Only logged-in admins can enter.
