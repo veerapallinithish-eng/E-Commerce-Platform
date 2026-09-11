@@ -13,7 +13,7 @@ export default function Home() {
   const [categories, setCategories] = useState([])
   const [category, setCategory] = useState(() => searchParams.get('category') || '')
   const [search, setSearch] = useState(() => searchParams.get('search') || '')
-  const debouncedSearch = useDebounce(search, 300)
+  const debouncedSearch = useDebounce(search, 500)
   const [sort, setSort] = useState(() => searchParams.get('sort') || '')
   const [pageSize, setPageSize] = useState(() => {
     const value = Number(searchParams.get('limit'))
@@ -33,7 +33,11 @@ export default function Home() {
 
   useEffect(() => {
     const controller = new AbortController()
+    const normalizedInput = search.trim()
     const normalizedSearch = debouncedSearch.trim()
+
+    if (normalizedInput !== normalizedSearch) return undefined
+
     setLoading(true)
     const params = { page: currentPage, limit: pageSize }
     if (category) params.category = category
@@ -54,7 +58,7 @@ export default function Home() {
       })
 
     return () => controller.abort()
-  }, [category, debouncedSearch, sort, currentPage, pageSize])
+  }, [category, search, debouncedSearch, sort, currentPage, pageSize])
 
   useEffect(() => {
     const nextParams = {}
