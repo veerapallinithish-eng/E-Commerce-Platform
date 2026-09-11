@@ -1,0 +1,80 @@
+
+ 1. What are LIMIT and OFFSET in SQL?
+
+LIMIT tells how many products to display.
+
+OFFSET tells how many products to skip.
+
+If there are 47 products and we need **page 3 with 8 products per page**:
+
+* LIMIT = 8
+* OFFSET = (3 - 1) × 8 = **16**
+
+So:
+
+sql
+SELECT * FROM products LIMIT 8 OFFSET 16;
+
+
+This displays products **17 to 24**.
+
+   
+   
+   2. How does useDebounce work?
+
+useDebounc waits for a short time before updating the search value.
+
+For example, when we type in the search box, it waits for **300 milliseconds** after we stop typing before making the API request.
+
+javascript
+return () => clearTimeout(timer);
+
+
+This cleanup function cancels the previous timer when we type again. It is important because it prevents unnecessary API calls for every keystroke.
+
+
+
+ 3. Why reset currentPage to 1 when searching?
+
+When we enter a new search term, the results change.
+
+If we are on page 3 and the new search has only one page of results, page 3 will be empty.
+
+So we reset the page to 1:
+
+javascript
+setCurrentPage(1);
+
+
+This makes every new search start from the first page.
+
+
+
+
+ 4. How does the Pagination component work?
+
+The Pagination component is reused on both the **Home page** and **Admin Orders page**.
+
+It accepts these props:
+
+* currentPage  – current active page
+* totalPages – total number of pages
+* onPageChange  – function to change the page
+
+Example:
+
+jsx
+<Pagination
+  currentPage={currentPage}
+  totalPages={totalPages}
+  onPageChange={setCurrentPage}
+/>
+
+
+The parent page controls the active page using:
+
+javascript
+const [currentPage, setCurrentPage] = useState(1);
+
+
+When the user clicks another page, `setCurrentPage` changes the page number and the parent loads the correct data.
