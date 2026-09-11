@@ -1,8 +1,11 @@
 import re
+import os
+import uuid
 import mysql.connector
 from flask import Flask, request, jsonify, session
 from flask_bcrypt import Bcrypt
 from flask_cors import CORS
+from werkzeug.utils import secure_filename
 from datetime import timedelta
 
 # --------------------------------------------------
@@ -13,10 +16,35 @@ app = Flask(__name__)
 app.secret_key = "CHANGE_THIS_TO_A_RANDOM_SECRET_KEY"
 app.permanent_session_lifetime = timedelta(days=7)
 
-# Allow the React dev server to send cookies cross-origin
-CORS(app, supports_credentials=True, origins=["http://localhost:5173"])
+# Allow the React dev server to send cookies from the local Vite ports.
+CORS(
+    app,
+    supports_credentials=True,
+    origins=[
+        f"http://{host}:{port}"
+        for host in ("localhost", "127.0.0.1", "[::1]")
+        for port in range(5173, 5181)
+    ]
+)
 
 bcrypt = Bcrypt(app)
+
+# --------------------------------------------------
+# FILE UPLOAD CONFIGURATION
+# --------------------------------------------------
+
+UPLOAD_FOLDER = os.path.join(app.root_path, 'static', 'uploads')
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp'}
+MAX_FILE_SIZE = 2 * 1024 * 1024  # 2 MB
+
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+
+def allowed_file(filename):
+    """Check if file extension is allowed."""
+    ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+    return ext in ALLOWED_EXTENSIONS
 
 DB_CONFIG = {
     "host": "localhost",
@@ -27,7 +55,36 @@ DB_CONFIG = {
 
 
 def get_db_connection():
-    return mysql.connector.connect(**DB_CONFIG)
+    conn = mysql.connector.connect(**DB_CONFIG)
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS product_images (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            product_id INT NOT NULL,
+            image_url VARCHAR(500) NOT NULL,
+            display_order INT NOT NULL DEFAULT 0,
+            FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB
+        """
+    )
+    conn.commit()
+    cursor.close()
+    return conn
+
+
+def delete_local_image(image_url):
+    """Delete an uploaded image while leaving external URLs untouched."""
+    if not image_url or not image_url.startswith('/static/uploads/'):
+        return
+
+    filename = secure_filename(image_url.rsplit('/', 1)[-1])
+    if not filename:
+        return
+
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    if os.path.isfile(filepath):
+        os.remove(filepath)
 
 
 # --------------------------------------------------
@@ -211,6 +268,52 @@ def me():
 
 
 # --------------------------------------------------
+# FILE UPLOAD ROUTES (ADMIN ONLY)
+# --------------------------------------------------
+
+@app.route("/api/upload", methods=["POST"])
+@admin_required
+def upload_image():
+    """Upload an image file and return its path."""
+    if 'image' not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+
+    file = request.files['image']
+
+    if file.filename == '':
+        return jsonify({"error": "No file selected"}), 400
+
+    safe_filename = secure_filename(file.filename)
+    if not safe_filename or not allowed_file(safe_filename):
+        return jsonify({"error": "Invalid file type. Allowed: PNG, JPG, JPEG, WebP"}), 400
+
+    # Check file size
+    file.seek(0, 2)  # Seek to end
+    file_size = file.tell()
+    file.seek(0)  # Reset to beginning
+
+    if file_size > MAX_FILE_SIZE:
+        return jsonify({"error": f"File too large. Maximum size: 2 MB"}), 400
+
+    try:
+        # Generate a unique filename to prevent overwrites
+        ext = safe_filename.rsplit('.', 1)[-1].lower()
+        unique_name = f"{uuid.uuid4().hex}.{ext}"
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_name)
+
+        # Save the file
+        file.save(filepath)
+
+        # Return the path to be stored in database
+        image_url = f"/static/uploads/{unique_name}"
+        return jsonify({"image_url": image_url}), 201
+
+    except Exception as e:
+        app.logger.exception("File upload failed")
+        return jsonify({"error": "File upload failed"}), 500
+
+
+# --------------------------------------------------
 # PRODUCT ROUTES (PUBLIC)
 # --------------------------------------------------
 
@@ -219,12 +322,42 @@ def get_products():
     category = request.args.get("category")
     search = request.args.get("search")
     sort = request.args.get("sort")
+    try:
+        page = max(int(request.args.get("page", 1)), 1)
+        limit = min(max(int(request.args.get("limit", 8)), 1), 100)
+    except (TypeError, ValueError):
+        return jsonify({"error": "page and limit must be valid numbers"}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
 
     try:
-        query = """
+        filters = []
+        params = []
+
+        if category:
+            filters.append("c.name = %s")
+            params.append(category)
+
+        if search:
+            filters.append("(p.name LIKE %s OR p.description LIKE %s)")
+            like_term = f"%{search}%"
+            params.extend([like_term, like_term])
+
+        where_clause = " AND ".join(filters) if filters else "1=1"
+
+        cursor.execute(
+            f"""
+            SELECT COUNT(*) AS total
+            FROM products p
+            LEFT JOIN categories c ON p.category_id = c.id
+            WHERE {where_clause}
+            """,
+            params
+        )
+        total = cursor.fetchone()["total"]
+
+        query = f"""
             SELECT p.*, c.name AS category_name,
                    COALESCE(r.avg_rating, 0) AS avg_rating,
                    COALESCE(r.rating_count, 0) AS rating_count
@@ -235,18 +368,8 @@ def get_products():
                 FROM ratings
                 GROUP BY product_id
             ) r ON r.product_id = p.id
-            WHERE 1=1
+            WHERE {where_clause}
         """
-        params = []
-
-        if category:
-            query += " AND c.name = %s"
-            params.append(category)
-
-        if search:
-            query += " AND (p.name LIKE %s OR p.description LIKE %s)"
-            like_term = f"%{search}%"
-            params.extend([like_term, like_term])
 
         if sort == "price_asc":
             query += " ORDER BY p.price ASC"
@@ -257,10 +380,26 @@ def get_products():
         else:
             query += " ORDER BY p.id ASC"
 
-        cursor.execute(query, params)
+        offset = (page - 1) * limit
+        cursor.execute(query + " LIMIT %s OFFSET %s", params + [limit, offset])
         products = cursor.fetchall()
 
-        return jsonify(products), 200
+        for product in products:
+            cursor.execute(
+                "SELECT image_url FROM product_images WHERE product_id = %s ORDER BY display_order, id",
+                (product["id"],)
+            )
+            product["gallery"] = [row["image_url"] for row in cursor.fetchall()]
+            if product["image_url"] and product["image_url"] not in product["gallery"]:
+                product["gallery"].insert(0, product["image_url"])
+
+        return jsonify({
+            "products": products,
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "total_pages": (total + limit - 1) // limit
+        }), 200
 
     finally:
         cursor.close()
@@ -293,6 +432,14 @@ def get_product(product_id):
 
         if not product:
             return jsonify({"error": "Product not found"}), 404
+
+        cursor.execute(
+            "SELECT image_url FROM product_images WHERE product_id = %s ORDER BY display_order, id",
+            (product_id,)
+        )
+        product["gallery"] = [row["image_url"] for row in cursor.fetchall()]
+        if product["image_url"] and product["image_url"] not in product["gallery"]:
+            product["gallery"].insert(0, product["image_url"])
 
         return jsonify(product), 200
 
@@ -330,6 +477,8 @@ def create_product():
         if field not in data:
             return jsonify({"error": f"{field} is required"}), 400
 
+    image_urls = data.get("image_urls") or ([data["image_url"]] if data.get("image_url") else [])
+
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -345,12 +494,18 @@ def create_product():
                 data["price"],
                 data["stock"],
                 data["category_id"],
-                data.get("image_url", "")
+                image_urls[0] if image_urls else ""
             )
         )
+        product_id = cursor.lastrowid
+        for display_order, image_url in enumerate(image_urls):
+            cursor.execute(
+                "INSERT INTO product_images (product_id, image_url, display_order) VALUES (%s, %s, %s)",
+                (product_id, image_url, display_order)
+            )
         conn.commit()
 
-        return jsonify({"id": cursor.lastrowid, "message": "Product created successfully"}), 201
+        return jsonify({"id": product_id, "message": "Product created successfully"}), 201
 
     finally:
         cursor.close()
@@ -361,7 +516,6 @@ def create_product():
 @admin_required
 def update_product(product_id):
     data = request.get_json()
-
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
 
@@ -371,6 +525,16 @@ def update_product(product_id):
 
         if not product:
             return jsonify({"error": "Product not found"}), 404
+
+        cursor.execute(
+            "SELECT image_url FROM product_images WHERE product_id = %s",
+            (product_id,)
+        )
+        old_gallery = [row["image_url"] for row in cursor.fetchall()]
+        image_urls = data.get("image_urls")
+        if image_urls is None:
+            image_urls = [data.get("image_url", product["image_url"])] if data.get("image_url", product["image_url"]) else []
+        image_url = image_urls[0] if image_urls else ""
 
         cursor.execute(
             """
@@ -385,11 +549,20 @@ def update_product(product_id):
                 data.get("price", product["price"]),
                 data.get("stock", product["stock"]),
                 data.get("category_id", product["category_id"]),
-                data.get("image_url", product["image_url"]),
+                image_url,
                 product_id
             )
         )
+        cursor.execute("DELETE FROM product_images WHERE product_id = %s", (product_id,))
+        for display_order, gallery_url in enumerate(image_urls):
+            cursor.execute(
+                "INSERT INTO product_images (product_id, image_url, display_order) VALUES (%s, %s, %s)",
+                (product_id, gallery_url, display_order)
+            )
         conn.commit()
+
+        for old_url in set(old_gallery + ([product["image_url"]] if product["image_url"] else [])) - set(image_urls):
+            delete_local_image(old_url)
 
         return jsonify({"message": "Product updated successfully"}), 200
 
@@ -1001,17 +1174,29 @@ def get_my_orders():
 @app.route("/api/orders", methods=["GET"])
 @admin_required
 def get_all_orders():
+    try:
+        page = max(int(request.args.get("page", 1)), 1)
+        limit = min(max(int(request.args.get("limit", 10)), 1), 100)
+    except (TypeError, ValueError):
+        return jsonify({"error": "page and limit must be valid numbers"}), 400
+
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
 
     try:
+        cursor.execute("SELECT COUNT(*) AS total FROM orders")
+        total = cursor.fetchone()["total"]
+        offset = (page - 1) * limit
+
         cursor.execute(
             """
             SELECT o.*, u.name AS customer_name, u.email AS customer_email
             FROM orders o
             JOIN users u ON o.user_id = u.id
             ORDER BY o.ordered_at DESC
-            """
+            LIMIT %s OFFSET %s
+            """,
+            (limit, offset)
         )
         orders = cursor.fetchall()
 
@@ -1027,7 +1212,13 @@ def get_all_orders():
             )
             order["items"] = cursor.fetchall()
 
-        return jsonify(orders), 200
+        return jsonify({
+            "orders": orders,
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "total_pages": (total + limit - 1) // limit
+        }), 200
 
     finally:
         cursor.close()
@@ -1069,4 +1260,4 @@ def update_order_status(order_id):
 # --------------------------------------------------
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(debug=False, port=5000)

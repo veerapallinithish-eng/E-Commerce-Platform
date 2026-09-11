@@ -24,7 +24,7 @@ export default function Navbar() {
         WebkitTextFillColor: 'transparent',
         letterSpacing: '-0.02em'
       }}>
-        🛍️ Trend cart
+        🛍️ TrendzCart
       </Link>
 
       <div style={{ display: 'flex', gap: 22, alignItems: 'center' }}>

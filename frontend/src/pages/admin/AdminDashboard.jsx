@@ -36,14 +36,17 @@ function StatCard({ label, value, accent, icon }) {
 export default function AdminDashboard() {
   const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
   useEffect(() => {
     api.get('/admin/summary')
       .then(res => setSummary(res.data))
+      .catch(() => setError('Could not load dashboard data. Please try again.'))
       .finally(() => setLoading(false))
   }, [])
 
   if (loading) return <div className="container">Loading dashboard...</div>
+  if (error) return <div className="container"><p className="error-text">{error}</p></div>
   if (!summary) return <div className="container">Could not load dashboard.</div>
 
   const maxUnits = Math.max(1, ...summary.top_products.map(p => Number(p.units_sold)))

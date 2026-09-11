@@ -220,15 +220,15 @@ a {
 }
 
 .fade-in {
-  animation: fadeIn 0.45s var(--ease);
+  animation: fadeIn 0.25s ease-out both;
 }
 
 .slide-up {
-  animation: slideUp 0.45s var(--ease);
+  animation: slideUp 0.25s ease-out both;
 }
 
 .pop-in {
-  animation: popIn 0.4s var(--ease);
+  animation: fadeIn 0.25s ease-out both;
 }
 
 
@@ -240,8 +240,6 @@ a {
   max-width: 1180px;
   margin: 0 auto;
   padding: 28px 20px 70px;
-
-  animation: fadeIn 0.4s var(--ease);
 }
 
 h1,
@@ -376,6 +374,33 @@ h4 {
 
 .btn-outline:hover:not(:disabled) {
   background: var(--primary-light);
+}
+
+.btn-primary {
+  box-shadow:
+    0 0 0 1px rgba(41, 97, 76, 0.12),
+    0 8px 16px rgba(41, 97, 76, 0.15);
+  animation: paginationGlow 4s ease-in-out infinite;
+  will-change: box-shadow, filter;
+}
+
+@keyframes paginationGlow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px rgba(41, 97, 76, 0.12),
+      0 8px 16px rgba(41, 97, 76, 0.15),
+      0 0 0 rgba(41, 97, 76, 0);
+    filter: saturate(1);
+  }
+
+  50% {
+    box-shadow:
+      0 0 0 1px rgba(41, 97, 76, 0.16),
+      0 9px 18px rgba(41, 97, 76, 0.18),
+      0 0 10px rgba(41, 97, 76, 0.08);
+    filter: saturate(1.05);
+  }
 }
 
 .btn-sm {
@@ -645,6 +670,14 @@ tbody tr:hover {
   top: 0;
 
   z-index: 50;
+}
+
+.navbar-slot {
+  min-height: 65px;
+}
+
+.navbar-slot.is-loading .navbar {
+  visibility: hidden;
 }
 
 .nav-link {

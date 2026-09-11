@@ -1,6 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { useCart } from '../context/CartContext'
 import { formatINR } from '../utils/currency'
+import { getImageUrl } from '../api'
 
 export default function Cart() {
   const { cartItems, updateQuantity, removeFromCart, cartTotal } = useCart()
@@ -27,9 +28,12 @@ export default function Cart() {
         {cartItems.map(item => (
           <div key={item.id} className="card card-hover slide-up" style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
             <img
-              src={item.image_url || 'https://placehold.co/100x100/666666/FFFFFF?text=No+Image'}
+              src={getImageUrl(item.image_url)}
               alt={item.name}
-              style={{ width: 70, height: 70, objectFit: 'cover', borderRadius: 10 }}
+              style={{ width: 70, height: 70, objectFit: 'cover', borderRadius: 10, backgroundColor: '#f0f0f0' }}
+              onError={e => {
+                e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23e0e0e0" width="100" height="100"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" font-family="Arial" font-size="10" fill="%23999"%3ENo image%3C/text%3E%3C/svg%3E'
+              }}
             />
 
             <div style={{ flex: 1, minWidth: 140 }}>

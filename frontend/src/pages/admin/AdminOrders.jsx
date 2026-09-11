@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import api from '../../api'
 import { formatINR } from '../../utils/currency'
 import { formatISTDate } from '../../utils/datetime'
+import Pagination from '../../components/Pagination'
 
 const STATUSES = ['Pending', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled']
 
@@ -15,16 +16,23 @@ const badgeClass = {
 
 export default function AdminOrders() {
   const [orders, setOrders] = useState([])
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
   const [loading, setLoading] = useState(true)
 
   function loadOrders() {
     setLoading(true)
-    api.get('/orders').then(res => setOrders(res.data)).finally(() => setLoading(false))
+    api.get('/orders', { params: { page: currentPage, limit: 10 } })
+      .then(res => {
+        setOrders(res.data.orders)
+        setTotalPages(res.data.total_pages)
+      })
+      .finally(() => setLoading(false))
   }
 
   useEffect(() => {
     loadOrders()
-  }, [])
+  }, [currentPage])
 
   async function handleStatusChange(orderId, status) {
     await api.put(`/orders/${orderId}/status`, { status })
@@ -82,6 +90,12 @@ export default function AdminOrders() {
           </tbody>
         </table>
       </div>
+
+      <Pagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        onPageChange={setCurrentPage}
+      />
     </div>
   )
 }

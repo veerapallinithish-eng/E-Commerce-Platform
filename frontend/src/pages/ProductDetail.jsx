@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext'
 import StarRating from '../components/StarRating'
 import { formatINR } from '../utils/currency'
 import { formatISTDate } from '../utils/datetime'
+import { getImageUrl } from '../api'
 
 export default function ProductDetail() {
   const { id } = useParams()
@@ -16,6 +17,7 @@ export default function ProductDetail() {
   const { isWishlisted, toggleWishlist } = useWishlist()
 
   const [product, setProduct] = useState(null)
+  const [selectedImage, setSelectedImage] = useState(null)
   const [quantity, setQuantity] = useState(1)
   const [added, setAdded] = useState(false)
 
@@ -29,6 +31,10 @@ export default function ProductDetail() {
 
   useEffect(() => {
     api.get(`/products/${id}`).then(res => setProduct(res.data))
+  }, [id])
+
+  useEffect(() => {
+    setSelectedImage(null)
   }, [id])
 
   function loadRatings() {
@@ -54,6 +60,8 @@ export default function ProductDetail() {
   const outOfStock = product.stock === 0
   const lowStock = !outOfStock && product.stock < 5
   const wishlisted = isWishlisted(product.id)
+  const galleryImages = product.gallery?.length ? product.gallery : (product.image_url ? [product.image_url] : [])
+  const mainImage = selectedImage || galleryImages[0]
 
   function handleAddToCart() {
     addToCart(product, quantity)
@@ -92,10 +100,35 @@ export default function ProductDetail() {
       <div style={{ display: 'flex', gap: 36, flexWrap: 'wrap' }}>
         <div style={{ position: 'relative' }}>
           <img
-            src={product.image_url || 'https://placehold.co/500x500/666666/FFFFFF?text=No+Image'}
+            src={getImageUrl(mainImage)}
             alt={product.name}
-            style={{ width: 340, height: 340, objectFit: 'cover', borderRadius: 16, boxShadow: 'var(--shadow-md)' }}
+            style={{
+              width: 340,
+              height: 340,
+              objectFit: 'cover',
+              borderRadius: 16,
+              boxShadow: 'var(--shadow-md)',
+              backgroundColor: '#f0f0f0'
+            }}
+            onError={e => {
+              e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="500" height="500"%3E%3Crect fill="%23e0e0e0" width="500" height="500"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" font-family="Arial" font-size="18" fill="%23999"%3ENo image%3C/text%3E%3C/svg%3E'
+            }}
           />
+          {galleryImages.length > 1 && (
+            <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+              {galleryImages.map((imageUrl, index) => (
+                <button
+                  key={`${imageUrl}-${index}`}
+                  type="button"
+                  onClick={() => setSelectedImage(imageUrl)}
+                  aria-label={`View image ${index + 1}`}
+                  style={{ padding: 2, border: `2px solid ${mainImage === imageUrl ? 'var(--primary)' : 'var(--border)'}`, borderRadius: 8, background: 'transparent' }}
+                >
+                  <img src={getImageUrl(imageUrl)} alt="" style={{ width: 58, height: 58, objectFit: 'cover', borderRadius: 6, display: 'block' }} />
+                </button>
+              ))}
+            </div>
+          )}
           {user && !isAdmin && (
             <button
               className={`heart-btn${wishlisted ? ' active' : ''}`}

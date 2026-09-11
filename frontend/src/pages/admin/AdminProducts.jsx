@@ -9,7 +9,9 @@ export default function AdminProducts() {
 
   function loadProducts() {
     setLoading(true)
-    api.get('/products').then(res => setProducts(res.data)).finally(() => setLoading(false))
+    api.get('/products', { params: { page: 1, limit: 100 } })
+      .then(res => setProducts(res.data.products))
+      .finally(() => setLoading(false))
   }
 
   useEffect(() => {

@@ -12,4 +12,4 @@ A full-stack store built with React, Context API, Flask, and MySQL.
 
 The frontend expects Flask at `http://localhost:5000`. Set `VITE_API_URL` to change it. Backend database settings use `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, and `SECRET_KEY`.
 
-Admin login: `admin@example.com` / `admin123`
+Admin login: `trendadmin@ecommerce.com` / `admin123`

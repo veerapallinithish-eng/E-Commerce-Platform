@@ -20,14 +20,19 @@ export default function Login() {
       const user = await login(email, password)
       navigate(user.role === 'admin' ? '/admin' : '/')
     } catch (err) {
-      setError(err.response?.data?.error || 'Login failed')
+      setError(
+        err.response?.data?.error ||
+        (err.code === 'ERR_NETWORK'
+          ? 'Cannot connect to the server. Start Flask on port 5000 and try again.'
+          : 'Login failed')
+      )
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="container pop-in" style={{ maxWidth: 400 }}>
+    <div className="container fade-in" style={{ maxWidth: 400 }}>
       <h2>Welcome back</h2>
       <p className="text-muted" style={{ marginTop: -8 }}>Log in to continue shopping.</p>
 

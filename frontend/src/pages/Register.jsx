@@ -43,9 +43,9 @@ export default function Register() {
   }
 
   return (
-    <div className="container pop-in" style={{ maxWidth: 400 }}>
+    <div className="container fade-in" style={{ maxWidth: 400 }}>
       <h2>Create your account</h2>
-      <p className="text-muted" style={{ marginTop: -8 }}>Join Trend cart in seconds.</p>
+      <p className="text-muted" style={{ marginTop: -8 }}>Join TrendzCart in seconds.</p>
 
       <form onSubmit={handleSubmit} className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <input

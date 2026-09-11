@@ -2,6 +2,7 @@ import { Routes, Route } from 'react-router-dom'
 import Navbar from './components/Navbar'
 import ProtectedRoute from './components/ProtectedRoute'
 import AdminRoute from './components/AdminRoute'
+import { useAuth } from './context/AuthContext'
 
 import Home from './pages/Home'
 import ProductDetail from './pages/ProductDetail'
@@ -19,9 +20,13 @@ import AdminOrders from './pages/admin/AdminOrders'
 import AdminCoupons from './pages/admin/AdminCoupons'
 
 export default function App() {
+  const { loading: authLoading } = useAuth()
+
   return (
     <>
-      <Navbar />
+      <div className={`navbar-slot${authLoading ? ' is-loading' : ''}`}>
+        <Navbar />
+      </div>
 
       <Routes>
         {/* Public routes */}

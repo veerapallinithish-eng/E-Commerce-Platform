@@ -5,6 +5,7 @@ import { useWishlist } from '../context/WishlistContext'
 import { useAuth } from '../context/AuthContext'
 import StarRating from './StarRating'
 import { formatINR } from '../utils/currency'
+import { getImageUrl } from '../api'
 
 export default function ProductCard({ product }) {
   const { addToCart } = useCart()
@@ -36,14 +37,18 @@ export default function ProductCard({ product }) {
       <div style={{ position: 'relative' }}>
         <Link to={`/products/${product.id}`}>
           <img
-            src={product.image_url || 'https://placehold.co/400x400/666666/FFFFFF?text=No+Image'}
+            src={getImageUrl(product.image_url)}
             alt={product.name}
             style={{
               width: '100%',
               height: 170,
               objectFit: 'cover',
               borderRadius: 10,
-              display: 'block'
+              display: 'block',
+              backgroundColor: '#f0f0f0'
+            }}
+            onError={e => {
+              e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="400"%3E%3Crect fill="%23e0e0e0" width="400" height="400"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" font-family="Arial" font-size="16" fill="%23999"%3ENo image%3C/text%3E%3C/svg%3E'
             }}
           />
         </Link>
