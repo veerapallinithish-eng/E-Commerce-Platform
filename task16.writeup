@@ -1,0 +1,25 @@
+## Task 16 – Write-up
+
+ 1.
+
+An **access token** is used to access protected APIs. It has a short expiry time, like **15 minutes**.
+
+A **refresh token** is used to get a new access token when the old one expires. It has a longer expiry time, like **7 days**. The access token is short-lived for better security, while the refresh token allows the user to stay logged in longer.
+
+ 2.
+
+An **Axios interceptor** automatically runs before a request or after a response. In my project, it gets the access token from `localStorage` and adds it to the **Authorization Bearer header**.
+
+This is better than manually adding the token to every API call because it avoids repeating the same code and keeps the API calls clean.
+
+ 3.
+
+When the access token expires, the API returns a **401 error**. The Axios interceptor detects this error, gets the refresh token from `localStorage`, and sends it to `/api/refresh`.
+
+The backend returns a new access token. The new token is stored, and the original request is sent again. If the refresh token also fails, the user is logged out and redirected to the login page. 
+
+4.
+
+**JWT authentication** uses a signed token that the client sends with API requests using the Authorization header.
+
+**Flask session authentication** uses a session cookie, and the server keeps track of the session. JWT is useful for my React application because React communicates with the Flask backend through APIs, and the token can be sent directly with each request. 

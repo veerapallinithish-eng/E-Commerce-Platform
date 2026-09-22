@@ -11,6 +11,34 @@ const STATUS_BADGE = {
   Cancelled: 'badge-cancelled'
 }
 
+function TokenExpiryCountdown() {
+  const [secondsRemaining, setSecondsRemaining] = useState(null)
+
+  useEffect(() => {
+    function updateCountdown() {
+      const token = localStorage.getItem('access_token')
+      if (!token) return setSecondsRemaining(null)
+
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]))
+        setSecondsRemaining(Math.max(0, payload.exp - Math.floor(Date.now() / 1000)))
+      } catch {
+        setSecondsRemaining(null)
+      }
+    }
+
+    updateCountdown()
+    const interval = window.setInterval(updateCountdown, 1000)
+    return () => window.clearInterval(interval)
+  }, [])
+
+  if (secondsRemaining === null) return null
+
+  const minutes = Math.floor(secondsRemaining / 60)
+  const seconds = String(secondsRemaining % 60).padStart(2, '0')
+  return <p className="text-muted" style={{ marginTop: -8 }}>Access token expires in {minutes}:{seconds}</p>
+}
+
 function StatCard({ label, value, accent, icon }) {
   return (
     <div className="card card-hover slide-up" style={{ flex: '1 1 200px' }}>
@@ -55,6 +83,7 @@ export default function AdminDashboard() {
     <div className="container fade-in">
       <h2>Sales Dashboard</h2>
       <p className="text-muted" style={{ marginTop: -8 }}>A live snapshot of store performance.</p>
+      <TokenExpiryCountdown />
 
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 24 }}>
         <StatCard label="Total Revenue" value={formatINR(summary.total_revenue)} accent="var(--success-light)" icon="💰" />

@@ -21,6 +21,17 @@ CREATE TABLE IF NOT EXISTS users (
 ) ENGINE=InnoDB;
 
 -- --------------------------------------------------
+-- REVOKED JWT TOKENS
+-- --------------------------------------------------
+CREATE TABLE IF NOT EXISTS revoked_tokens (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  jti VARCHAR(36) NOT NULL UNIQUE,
+  expires_at DATETIME NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_revoked_tokens_expires_at (expires_at)
+) ENGINE=InnoDB;
+
+-- --------------------------------------------------
 -- CATEGORIES
 -- --------------------------------------------------
 CREATE TABLE IF NOT EXISTS categories (

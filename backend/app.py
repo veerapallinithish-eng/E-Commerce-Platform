@@ -1,25 +1,60 @@
 import re
 import os
 import uuid
+import smtplib
 import mysql.connector
-from flask import Flask, request, jsonify, session
+from datetime import datetime, timedelta, timezone
+from email.message import EmailMessage
+
+from flask import Flask, request, jsonify
 from flask_bcrypt import Bcrypt
 from flask_cors import CORS
+from flask_jwt_extended import (
+    JWTManager,
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+    get_jwt,
+    get_jwt_identity,
+    jwt_required,
+)
 from werkzeug.utils import secure_filename
-from datetime import timedelta
 
 # --------------------------------------------------
 # APP CONFIGURATION
 # --------------------------------------------------
 
 app = Flask(__name__)
-app.secret_key = "CHANGE_THIS_TO_A_RANDOM_SECRET_KEY"
-app.permanent_session_lifetime = timedelta(days=7)
+app.config["JWT_SECRET_KEY"] = "your_jwt_secret"
+app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(minutes=15)
+app.config["JWT_REFRESH_TOKEN_EXPIRES"] = timedelta(days=7)
+app.config["JWT_TOKEN_LOCATION"] = ["headers"]
 
-# Allow the React dev server to send cookies from the local Vite ports.
+jwt = JWTManager(app)
+
+
+@jwt.token_in_blocklist_loader
+def is_token_revoked(_jwt_header, jwt_payload):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT 1 FROM revoked_tokens WHERE jti = %s LIMIT 1",
+            (jwt_payload["jti"],)
+        )
+        return cursor.fetchone() is not None
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@jwt.revoked_token_loader
+def revoked_token_response(_jwt_header, _jwt_payload):
+    return jsonify({"error": "Token has been revoked"}), 401
+
+# Allow the React dev server to send the Authorization header.
 CORS(
     app,
-    supports_credentials=True,
     origins=[
         f"http://{host}:{port}"
         for host in ("localhost", "127.0.0.1", "[::1]")
@@ -57,6 +92,17 @@ DB_CONFIG = {
 def get_db_connection():
     conn = mysql.connector.connect(**DB_CONFIG)
     cursor = conn.cursor()
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS revoked_tokens (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            jti VARCHAR(36) NOT NULL UNIQUE,
+            expires_at DATETIME NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_revoked_tokens_expires_at (expires_at)
+        ) ENGINE=InnoDB
+        """
+    )
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS product_images (
@@ -115,25 +161,49 @@ def validate_password(password):
     return errors
 
 
+def send_password_reset_email(recipient, reset_token):
+    smtp_host = os.getenv("SMTP_HOST")
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+    smtp_username = os.getenv("SMTP_USERNAME")
+    smtp_password = os.getenv("SMTP_PASSWORD")
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
+    reset_url = f"{frontend_url}/reset-password?token={reset_token}"
+
+    if not smtp_host or not smtp_username or not smtp_password:
+        raise RuntimeError("SMTP settings are not configured")
+
+    message = EmailMessage()
+    message["Subject"] = "Reset your TrendzCart password"
+    message["From"] = smtp_username
+    message["To"] = recipient
+    message.set_content(
+        "Use this link to reset your TrendzCart password. "
+        f"The link expires in 15 minutes:\n\n{reset_url}"
+    )
+
+    with smtplib.SMTP(smtp_host, smtp_port) as smtp:
+        smtp.starttls()
+        smtp.login(smtp_username, smtp_password)
+        smtp.send_message(message)
+
+
 def login_required(fn):
     from functools import wraps
 
     @wraps(fn)
+    @jwt_required()
     def wrapper(*args, **kwargs):
-        if "user_id" not in session:
-            return jsonify({"error": "Authentication required"}), 401
-
+        user_id = get_jwt_identity()
         conn = get_db_connection()
         cursor = conn.cursor()
         try:
-            cursor.execute("SELECT 1 FROM users WHERE id = %s", (session["user_id"],))
+            cursor.execute("SELECT 1 FROM users WHERE id = %s", (user_id,))
             exists = cursor.fetchone()
         finally:
             cursor.close()
             conn.close()
 
         if not exists:
-            session.clear()
             return jsonify({"error": "Your session has expired, please log in again"}), 401
 
         return fn(*args, **kwargs)
@@ -144,10 +214,10 @@ def admin_required(fn):
     from functools import wraps
 
     @wraps(fn)
+    @jwt_required()
     def wrapper(*args, **kwargs):
-        if "user_id" not in session:
-            return jsonify({"error": "Authentication required"}), 401
-        if session.get("role") != "admin":
+        claims = get_jwt()
+        if claims.get("role") != "admin":
             return jsonify({"error": "Admin access required"}), 403
         return fn(*args, **kwargs)
     return wrapper
@@ -195,17 +265,21 @@ def register():
         conn.commit()
 
         user_id = cursor.lastrowid
-
-        session.permanent = True
-        session["user_id"] = user_id
-        session["role"] = role
-        session["name"] = name
+        access_token = create_access_token(
+            identity=str(user_id),
+            additional_claims={"role": role, "name": name}
+        )
+        refresh_token = create_refresh_token(identity=str(user_id))
 
         return jsonify({
-            "id": user_id,
-            "name": name,
-            "email": email,
-            "role": role
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "user": {
+                "id": user_id,
+                "name": name,
+                "email": email,
+                "role": role,
+            },
         }), 201
 
     finally:
@@ -232,16 +306,21 @@ def login():
         if not user or not bcrypt.check_password_hash(user["password"], password):
             return jsonify({"error": "Invalid email or password"}), 401
 
-        session.permanent = True
-        session["user_id"] = user["id"]
-        session["role"] = user["role"]
-        session["name"] = user["name"]
+        access_token = create_access_token(
+            identity=str(user["id"]),
+            additional_claims={"role": user["role"], "name": user["name"]}
+        )
+        refresh_token = create_refresh_token(identity=str(user["id"]))
 
         return jsonify({
-            "id": user["id"],
-            "name": user["name"],
-            "email": user["email"],
-            "role": user["role"]
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "user": {
+                "id": user["id"],
+                "name": user["name"],
+                "email": user["email"],
+                "role": user["role"],
+            }
         }), 200
 
     finally:
@@ -250,21 +329,132 @@ def login():
 
 
 @app.route("/api/logout", methods=["GET"])
+@jwt_required()
 def logout():
-    session.clear()
+    claims = get_jwt()
+    refresh_token = request.headers.get("X-Refresh-Token")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        revoked_tokens = [(claims["jti"], claims["exp"])]
+        if refresh_token:
+            try:
+                refresh_claims = decode_token(refresh_token, allow_expired=False)
+                if refresh_claims.get("type") == "refresh":
+                    revoked_tokens.append((refresh_claims["jti"], refresh_claims["exp"]))
+            except Exception:
+                pass
+
+        for jti, expires_at in revoked_tokens:
+            cursor.execute(
+                "INSERT IGNORE INTO revoked_tokens (jti, expires_at) VALUES (%s, %s)",
+                (jti, datetime.fromtimestamp(expires_at, tz=timezone.utc).replace(tzinfo=None)),
+            )
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
     return jsonify({"message": "Logged out successfully"}), 200
 
 
 @app.route("/api/me", methods=["GET"])
+@jwt_required()
 def me():
-    if "user_id" not in session:
-        return jsonify({"error": "Not authenticated"}), 401
+    user_id = get_jwt_identity()
+    claims = get_jwt()
 
     return jsonify({
-        "id": session["user_id"],
-        "name": session["name"],
-        "role": session["role"]
+        "id": int(user_id),
+        "name": claims.get("name"),
+        "role": claims.get("role")
     }), 200
+
+
+@app.route("/api/refresh", methods=["POST"])
+@jwt_required(refresh=True)
+def refresh_token():
+    user_id = get_jwt_identity()
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+        user = cursor.fetchone()
+        if not user:
+            return jsonify({"error": "User not found"}), 401
+
+        new_access_token = create_access_token(
+            identity=str(user["id"]),
+            additional_claims={"role": user["role"], "name": user["name"]}
+        )
+        return jsonify({"access_token": new_access_token}), 200
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route("/api/forgot-password", methods=["POST"])
+def forgot_password():
+    data = request.get_json() or {}
+    email = (data.get("email") or "").strip().lower()
+    response = {"message": "If an account exists, a password reset email has been sent."}
+
+    if not email:
+        return jsonify(response), 200
+
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT id, email FROM users WHERE email = %s", (email,))
+        user = cursor.fetchone()
+    finally:
+        cursor.close()
+        conn.close()
+
+    if user:
+        reset_token = create_access_token(
+            identity=str(user["id"]),
+            expires_delta=timedelta(minutes=15),
+            additional_claims={"purpose": "password_reset"},
+        )
+        try:
+            send_password_reset_email(user["email"], reset_token)
+        except (OSError, RuntimeError, smtplib.SMTPException):
+            app.logger.exception("Password reset email could not be sent")
+
+    return jsonify(response), 200
+
+
+@app.route("/api/reset-password", methods=["POST"])
+@jwt_required()
+def reset_password():
+    claims = get_jwt()
+    if claims.get("purpose") != "password_reset":
+        return jsonify({"error": "Invalid password reset token"}), 401
+
+    data = request.get_json() or {}
+    password = data.get("password")
+    password_errors = validate_password(password)
+    if password_errors:
+        return jsonify({
+            "error": "Password does not meet the required strength.",
+            "details": password_errors,
+        }), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE users SET password = %s WHERE id = %s",
+            (bcrypt.generate_password_hash(password).decode("utf-8"), get_jwt_identity()),
+        )
+        conn.commit()
+        if cursor.rowcount == 0:
+            return jsonify({"error": "User not found"}), 404
+        return jsonify({"message": "Password reset successfully"}), 200
+    finally:
+        cursor.close()
+        conn.close()
 
 
 # --------------------------------------------------
@@ -596,9 +786,11 @@ def delete_product(product_id):
 # --------------------------------------------------
 
 @app.route("/api/products/<int:product_id>/ratings", methods=["GET"])
+@jwt_required(optional=True)
 def get_product_ratings(product_id):
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
+    user_id = get_jwt_identity()
 
     try:
         cursor.execute(
@@ -620,9 +812,7 @@ def get_product_ratings(product_id):
         can_rate = False
         my_rating = None
 
-        if "user_id" in session:
-            user_id = session["user_id"]
-
+        if user_id:
             # A customer can rate a product only if they purchased it.
             cursor.execute(
                 """
@@ -661,7 +851,7 @@ def submit_product_rating(product_id):
     data = request.get_json()
     rating = data.get("rating")
     review = data.get("review", "")
-    user_id = session["user_id"]
+    user_id = get_jwt_identity()
 
     try:
         rating = int(rating)
@@ -717,7 +907,7 @@ def submit_product_rating(product_id):
 @app.route("/api/wishlist", methods=["GET"])
 @login_required
 def get_wishlist():
-    user_id = session["user_id"]
+    user_id = get_jwt_identity()
 
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
@@ -746,7 +936,7 @@ def get_wishlist():
 def add_to_wishlist():
     data = request.get_json()
     product_id = data.get("product_id")
-    user_id = session["user_id"]
+    user_id = get_jwt_identity()
 
     if not product_id:
         return jsonify({"error": "product_id is required"}), 400
@@ -775,7 +965,7 @@ def add_to_wishlist():
 @app.route("/api/wishlist/<int:product_id>", methods=["DELETE"])
 @login_required
 def remove_from_wishlist(product_id):
-    user_id = session["user_id"]
+    user_id = get_jwt_identity()
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -1080,7 +1270,7 @@ def create_order():
         # --------------------------------------------------
         # STEP 2: All items validated — create the order
         # --------------------------------------------------
-        user_id = session["user_id"]
+        user_id = get_jwt_identity()
 
         cursor.execute(
             """
@@ -1136,7 +1326,7 @@ def create_order():
 @app.route("/api/orders/my", methods=["GET"])
 @login_required
 def get_my_orders():
-    user_id = session["user_id"]
+    user_id = get_jwt_identity()
 
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
