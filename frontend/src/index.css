@@ -51,6 +51,75 @@
   --radius-lg: 24px;
 
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --bg-primary: #f4f7f3;
+  --bg-secondary: #eaf1ec;
+  --text-primary: #17231d;
+  --text-secondary: #6b7280;
+  --border-color: rgba(41, 97, 76, 0.12);
+  --card-bg: rgba(255, 255, 255, 0.82);
+  --navbar-bg: rgba(255, 255, 255, 0.78);
+  --btn-primary: #29614c;
+  --btn-text: #ffffff;
+  --shadow: 0 2px 8px rgba(23, 60, 45, 0.06);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --primary: #78c7a5;
+  --primary-dark: #b4ead0;
+  --primary-light: #203b30;
+  --secondary-light: #31264b;
+  --success-light: #173d2b;
+  --danger-light: #492332;
+  --warning-light: #4a381b;
+  --info-light: #173b4c;
+  --text: #eef7f1;
+  --text-muted: #adbbb3;
+  --border: rgba(177, 225, 201, 0.18);
+  --surface: rgba(28, 43, 36, 0.88);
+  --surface-solid: #1c2b24;
+  --bg: #101814;
+  --bg-primary: #101814;
+  --bg-secondary: #18241e;
+  --text-primary: #eef7f1;
+  --text-secondary: #adbbb3;
+  --border-color: rgba(177, 225, 201, 0.18);
+  --card-bg: rgba(28, 43, 36, 0.88);
+  --navbar-bg: rgba(16, 24, 20, 0.86);
+  --btn-primary: #78c7a5;
+  --btn-text: #102017;
+  --shadow: 0 2px 8px rgba(0, 0, 0, 0.34);
+}
+
+:root[data-theme='contrast'] {
+  color-scheme: dark;
+  --primary: #ffe600;
+  --primary-dark: #fff7a3;
+  --primary-light: #514b00;
+  --secondary: #75f4ff;
+  --secondary-light: #003f45;
+  --accent: #ff8a00;
+  --success-light: #064b2c;
+  --danger-light: #5c071d;
+  --warning-light: #543600;
+  --info-light: #003b58;
+  --text: #ffffff;
+  --text-muted: #e0e0e0;
+  --border: #ffffff;
+  --surface: #080808;
+  --surface-solid: #080808;
+  --bg: #000000;
+  --bg-primary: #000000;
+  --bg-secondary: #111111;
+  --text-primary: #ffffff;
+  --text-secondary: #e0e0e0;
+  --border-color: #ffffff;
+  --card-bg: #080808;
+  --navbar-bg: #000000;
+  --btn-primary: #ffe600;
+  --btn-text: #000000;
+  --shadow: 0 0 0 2px #ffffff;
 }
 
 
@@ -91,6 +160,19 @@ body {
     var(--bg);
 
   -webkit-font-smoothing: antialiased;
+  transition: background 0.3s ease, color 0.3s ease;
+}
+
+body,
+.navbar,
+.card,
+input,
+select,
+textarea,
+.btn-secondary,
+.heart-btn,
+.theme-toggle {
+  transition: background 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 button,
@@ -271,7 +353,7 @@ h4 {
       var(--primary),
       var(--primary-dark));
 
-  color: white;
+  color: var(--btn-text);
 
   cursor: pointer;
 
@@ -326,8 +408,8 @@ h4 {
 }
 
 .btn:disabled {
-  background: #d1d5db;
-  color: #6b7280;
+  background: var(--bg-secondary);
+  color: var(--text-muted);
   cursor: not-allowed;
   box-shadow: none;
 }
@@ -343,7 +425,7 @@ h4 {
 }
 
 .btn-secondary {
-  background: rgba(255, 255, 255, 0.8);
+  background: var(--surface);
   color: var(--text);
 
   border: 1px solid var(--border);
@@ -354,7 +436,7 @@ h4 {
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background: white;
+  background: var(--surface-solid);
   color: var(--primary);
 
   border-color: rgba(41, 97, 76, 0.3);
@@ -440,7 +522,7 @@ textarea {
 
   font-size: 14px;
 
-  background: rgba(255, 255, 255, 0.8);
+  background: var(--surface);
 
   color: var(--text);
 
@@ -464,7 +546,7 @@ select:focus,
 textarea:focus {
   border-color: var(--primary);
 
-  background: white;
+  background: var(--surface-solid);
 
   box-shadow:
     0 0 0 4px rgba(41, 97, 76, 0.10);
@@ -493,7 +575,7 @@ textarea::placeholder {
 
   padding: 20px;
 
-  border: 1px solid rgba(255, 255, 255, 0.7);
+  border: 1px solid var(--border);
 
   box-shadow: var(--shadow-sm);
 
@@ -680,6 +762,27 @@ tbody tr:hover {
   visibility: hidden;
 }
 
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+.theme-toggle:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
 .nav-link {
   position: relative;
 
@@ -738,7 +841,7 @@ tbody tr:hover {
   border: none;
 
   background:
-    rgba(255, 255, 255, 0.9);
+    var(--surface-solid);
 
   backdrop-filter: blur(8px);
 
@@ -790,7 +893,7 @@ tbody tr:hover {
 }
 
 .star.empty {
-  color: #dedede;
+  color: var(--text-muted);
 }
 
 .stars.interactive .star {
@@ -812,9 +915,9 @@ tbody tr:hover {
 .skeleton {
   background:
     linear-gradient(90deg,
-      #e9eee9 25%,
-      #f7f9f7 37%,
-      #e9eee9 63%);
+      var(--bg-secondary) 25%,
+      var(--surface-solid) 37%,
+      var(--bg-secondary) 63%);
 
   background-size: 800px 100%;
 

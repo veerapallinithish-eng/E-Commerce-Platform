@@ -1,0 +1,99 @@
+# Task 17 – Dark Mode and Theme System
+
+
+
+1. What is a CSS custom property?
+
+A CSS custom property is a reusable value stored in CSS. It is usually used for colors, spacing, or other design values. Custom properties start with two hyphens and are used with `var()`.
+
+A hardcoded color is written directly in a CSS rule. If the color needs to change, every rule using that color must be edited separately. With a custom property, I can change the value in one place.
+
+Example from my code:
+
+```css
+:root {
+    --primary: #29614c;
+    --surface: rgba(255, 255, 255, 0.82);
+}
+
+:root[data-theme='dark'] {
+    --primary: #78c7a5;
+    --surface: rgba(28, 43, 36, 0.88);
+}
+
+.card {
+    background: var(--surface);
+}
+```
+
+The card automatically uses the correct background when the theme changes.
+
+
+
+
+ 2. How does the app detect the system theme on the first visit?
+
+The app first looks for a saved theme in localStorage. If there is no saved theme, it checks the user's system preference with matchMedia.
+
+The exact code is:
+
+```javascript
+function getSystemTheme() {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches
+        ? 'dark'
+        : 'light'
+}
+
+function getInitialTheme() {
+    const savedTheme = localStorage.getItem('theme')
+    return THEMES.includes(savedTheme) ? savedTheme : getSystemTheme()
+}
+```
+
+The app also listens for system theme changes when the user has not manually saved a theme:
+
+```javascript
+const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+
+const handleSystemThemeChange = event => {
+    setTheme(event.matches ? 'dark' : 'light')
+}
+
+mediaQuery.addEventListener('change', handleSystemThemeChange)
+```
+
+
+
+
+ 3. Why use data-theme on the root element?
+
+The app puts the selected theme on the root HTML element:
+
+```javascript
+document.documentElement.setAttribute('data-theme', theme)
+```
+
+This is useful because all components can use the same CSS variables. I do not need to pass a theme prop through the Navbar, product cards, forms, cart, checkout, and dashboard.
+
+Passing a theme prop to every component would make the code repetitive and harder to maintain. Changing one attribute on the root element updates the whole application through CSS.
+
+
+
+
+ 4. What does localStorage.getItem('theme') do?
+
+```javascript
+const savedTheme = localStorage.getItem('theme')
+```
+
+This reads the theme preference saved in the browser. The saved theme takes priority over the system preference because it represents the user's direct choice.
+
+For example, the computer might be set to dark mode, but the user might choose light mode in the application. The app should remember that choice instead of changing it back to dark mode.
+
+The priority order is:
+
+1. Use the saved theme if one exists.
+2. Otherwise use the system preference.
+3. Use light mode if the system preference is light.
+
+This is why the selected theme remains the same after refreshing the page.
