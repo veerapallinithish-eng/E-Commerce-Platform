@@ -94,6 +94,17 @@ def get_db_connection():
     cursor = conn.cursor()
     cursor.execute(
         """
+        SELECT COUNT(*)
+        FROM information_schema.columns
+        WHERE table_schema = DATABASE()
+          AND table_name = 'users'
+          AND column_name = 'avatar_url'
+        """
+    )
+    if cursor.fetchone()[0] == 0:
+        cursor.execute("ALTER TABLE users ADD COLUMN avatar_url VARCHAR(255) DEFAULT NULL")
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS revoked_tokens (
             id INT AUTO_INCREMENT PRIMARY KEY,
             jti VARCHAR(36) NOT NULL UNIQUE,
@@ -210,6 +221,17 @@ def login_required(fn):
     return wrapper
 
 
+def profile_payload(user):
+    return {
+        "id": user["id"],
+        "name": user["name"],
+        "email": user["email"],
+        "role": user["role"],
+        "avatar_url": user.get("avatar_url"),
+        "created_at": user["created_at"].isoformat() if user.get("created_at") else None,
+    }
+
+
 def admin_required(fn):
     from functools import wraps
 
@@ -279,6 +301,7 @@ def register():
                 "name": name,
                 "email": email,
                 "role": role,
+                "avatar_url": None,
             },
         }), 201
 
@@ -320,6 +343,7 @@ def login():
                 "name": user["name"],
                 "email": user["email"],
                 "role": user["role"],
+                "avatar_url": user.get("avatar_url"),
             }
         }), 200
 
@@ -361,13 +385,87 @@ def logout():
 @jwt_required()
 def me():
     user_id = get_jwt_identity()
-    claims = get_jwt()
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "SELECT id, name, email, role, avatar_url, created_at FROM users WHERE id = %s",
+            (user_id,),
+        )
+        user = cursor.fetchone()
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+        return jsonify(profile_payload(user)), 200
+    finally:
+        cursor.close()
+        conn.close()
 
-    return jsonify({
-        "id": int(user_id),
-        "name": claims.get("name"),
-        "role": claims.get("role")
-    }), 200
+
+@app.route("/api/me", methods=["PUT"])
+@jwt_required()
+def update_profile():
+    data = request.get_json() or {}
+    name = (data.get("name") or "").strip()
+    email = (data.get("email") or "").strip().lower()
+    avatar_url = data.get("avatar_url")
+
+    if not name or not email:
+        return jsonify({"error": "Name and email required"}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "UPDATE users SET name = %s, email = %s, avatar_url = COALESCE(%s, avatar_url) WHERE id = %s",
+            (name, email, avatar_url, get_jwt_identity()),
+        )
+        conn.commit()
+        cursor.execute(
+            "SELECT id, name, email, role, avatar_url, created_at FROM users WHERE id = %s",
+            (get_jwt_identity(),),
+        )
+        return jsonify({"message": "Profile updated", "user": profile_payload(cursor.fetchone())}), 200
+    except mysql.connector.IntegrityError:
+        conn.rollback()
+        return jsonify({"error": "Email already in use"}), 409
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route("/api/me/password", methods=["PUT"])
+@jwt_required()
+def change_password():
+    data = request.get_json() or {}
+    current_password = data.get("current_password") or ""
+    new_password = data.get("new_password") or ""
+    confirm_password = data.get("confirm_password") or ""
+
+    if new_password != confirm_password:
+        return jsonify({"error": "Passwords do not match"}), 400
+    password_errors = validate_password(new_password)
+    if password_errors:
+        return jsonify({
+            "error": "Password does not meet the required strength.",
+            "details": password_errors,
+        }), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT password FROM users WHERE id = %s", (get_jwt_identity(),))
+        user = cursor.fetchone()
+        if not user or not bcrypt.check_password_hash(user["password"], current_password):
+            return jsonify({"error": "Current password incorrect"}), 401
+        cursor.execute(
+            "UPDATE users SET password = %s WHERE id = %s",
+            (bcrypt.generate_password_hash(new_password).decode("utf-8"), get_jwt_identity()),
+        )
+        conn.commit()
+        return jsonify({"message": "Password changed"}), 200
+    finally:
+        cursor.close()
+        conn.close()
 
 
 @app.route("/api/refresh", methods=["POST"])
@@ -460,6 +558,44 @@ def reset_password():
 # --------------------------------------------------
 # FILE UPLOAD ROUTES (ADMIN ONLY)
 # --------------------------------------------------
+
+@app.route("/api/me/avatar", methods=["POST"])
+@jwt_required()
+def upload_profile_avatar():
+    if "image" not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+
+    file = request.files["image"]
+    safe_filename = secure_filename(file.filename or "")
+    if not safe_filename or not allowed_file(safe_filename):
+        return jsonify({"error": "Invalid file type. Allowed: PNG, JPG, JPEG, WebP"}), 400
+
+    file.seek(0, 2)
+    file_size = file.tell()
+    file.seek(0)
+    if file_size > MAX_FILE_SIZE:
+        return jsonify({"error": "File too large. Maximum size: 2 MB"}), 400
+
+    ext = safe_filename.rsplit(".", 1)[-1].lower()
+    image_url = f"/static/uploads/{uuid.uuid4().hex}.{ext}"
+    file.save(os.path.join(app.config["UPLOAD_FOLDER"], image_url.rsplit("/", 1)[-1]))
+
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            "UPDATE users SET avatar_url = %s WHERE id = %s",
+            (image_url, get_jwt_identity()),
+        )
+        conn.commit()
+        cursor.execute(
+            "SELECT id, name, email, role, avatar_url, created_at FROM users WHERE id = %s",
+            (get_jwt_identity(),),
+        )
+        return jsonify({"message": "Profile photo updated", "user": profile_payload(cursor.fetchone())}), 201
+    finally:
+        cursor.close()
+        conn.close()
 
 @app.route("/api/upload", methods=["POST"])
 @admin_required

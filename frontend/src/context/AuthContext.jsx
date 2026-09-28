@@ -53,11 +53,15 @@ export function AuthProvider({ children }) {
     }
   }
 
+  function updateUser(updatedUser) {
+    setUser(currentUser => ({ ...currentUser, ...updatedUser }))
+  }
+
   const isAdmin = user?.role === 'admin'
 
   return (
     <AuthContext.Provider value={{
-      user, loading, login, register, logout, isAdmin
+      user, loading, login, register, logout, updateUser, isAdmin
     }}>
       {children}
     </AuthContext.Provider>

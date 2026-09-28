@@ -1,0 +1,23 @@
+### 1. How does the Navbar update immediately after a name or avatar change without a page refresh?
+
+The Navbar gets the updated user details from the `AuthContext`. When the profile is updated, the `updateUser` function updates the user data in the Context. Since React Context is shared across components, the Navbar gets the new data automatically and re-renders without refreshing the page.
+
+**React concept used:** Context API and state update.
+
+### 2. Why do you verify the current password before allowing a change?
+
+We verify the current password to make sure that the person changing the password is the actual account owner.
+
+If we skip this step, someone who gets access to an already logged-in account could change the password and take control of the account.
+
+### 3. Why does the password change route return 401 for a wrong current password instead of 400?
+
+`401 Unauthorized` is used because the current password is not correct, so the user has not provided valid authentication credentials.
+
+`400 Bad Request` is normally used when the request itself has invalid or missing data.
+
+### 4. What is the purpose of the `updateUser` function added to AuthContext?
+
+The `updateUser` function updates the logged-in user's information in the `AuthContext`.
+
+For example, if the user changes their name or profile image, `updateUser` updates the data in the Context. This allows components like the Navbar and Profile page to show the latest information immediately without refreshing the page.

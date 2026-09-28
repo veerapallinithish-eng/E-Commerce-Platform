@@ -783,6 +783,89 @@ tbody tr:hover {
   color: var(--primary);
 }
 
+.profile-nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.avatar {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--primary-light);
+  color: var(--primary-dark);
+  font-weight: 800;
+}
+
+.avatar-sm {
+  width: 32px;
+  height: 32px;
+  font-size: 11px;
+}
+
+.avatar-lg {
+  width: 120px;
+  height: 120px;
+  font-size: 32px;
+}
+
+.profile-page {
+  max-width: 980px;
+}
+
+.profile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.profile-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.profile-section:first-child {
+  align-items: flex-start;
+}
+
+.profile-section:last-child {
+  grid-column: 1 / -1;
+}
+
+.profile-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.profile-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.profile-notice {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--success-light);
+  color: var(--success);
+}
+
 .nav-link {
   position: relative;
 
@@ -1072,6 +1155,14 @@ hr {
 
   .card {
     padding: 16px;
+  }
+
+  .profile-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-section:last-child {
+    grid-column: auto;
   }
 
   th,

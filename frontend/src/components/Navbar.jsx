@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import { useCart } from '../context/CartContext'
 import { useWishlist } from '../context/WishlistContext'
 import { useTheme } from '../context/ThemeContext'
+import { getImageUrl } from '../api'
 
 export default function Navbar() {
   const { user, logout, isAdmin } = useAuth()
@@ -10,6 +11,13 @@ export default function Navbar() {
   const { wishlistCount } = useWishlist()
   const navigate = useNavigate()
   const { theme, toggleTheme } = useTheme()
+
+  const initials = user?.name
+    ?.split(' ')
+    .map(part => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
 
   async function handleLogout() {
     await logout()
@@ -106,7 +114,14 @@ export default function Navbar() {
 
         {user ? (
           <>
-            <span style={{ color: 'var(--text-muted)', fontSize: 14 }}>Hi, {user.name.split(' ')[0]}</span>
+            <Link to="/profile" className="profile-nav-link" title="My Profile">
+              {user.avatar_url ? (
+                <img src={getImageUrl(user.avatar_url)} alt="Profile" className="avatar avatar-sm" />
+              ) : (
+                <span className="avatar avatar-sm avatar-placeholder">{initials}</span>
+              )}
+              <span style={{ color: 'var(--text-muted)', fontSize: 14 }}>Hi, {user.name.split(' ')[0]}</span>
+            </Link>
             <button className="btn btn-secondary btn-sm" onClick={handleLogout}>Logout</button>
           </>
         ) : (
