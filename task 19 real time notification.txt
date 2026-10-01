@@ -1,0 +1,85 @@
+ 1. Difference between HTTP and WebSocket communication
+
+**HTTP** works using a request and response method. The client sends a request to the server, and the server sends a response back. If the client wants new data, it has to send another request.
+
+**HTTP flow:**
+
+Client → Request → Server  
+Client ← Response ← Server
+
+**WebSocket** keeps a connection open between the client and server. After the connection is established, both sides can send data whenever needed without creating a new request each time.
+
+**WebSocket flow:**
+
+Client ↔ WebSocket Connection ↔ Server  
+Client ← Real-time data ← Server
+
+In my project, WebSocket is used so that the admin can receive a new order notification immediately without refreshing the page.
+
+
+
+
+
+ 2. What is a Socket.IO room and why use one for admin users?
+
+A **Socket.IO room** is a group of connected clients. A socket can join a particular room, and the server can send a message only to the users in that room.
+
+I used an **admin room** so that order notifications are sent only to logged-in admin users.
+
+For example:
+
+Customer places order  
+↓  
+Server creates notification  
+↓  
+Server sends notification to **admin room**  
+↓  
+Connected admins receive it
+
+If I used broadcasting to everyone, customers and other users could also receive admin notifications. Using an admin room keeps the notification targeted to the required users.
+
+
+
+ 3. What happens to notifications after a page refresh?
+
+When the page is refreshed, the WebSocket connection is disconnected and then connected again.
+
+The important point is that the notifications are **saved in the database**, so they are not lost when the socket disconnects.
+
+After the page loads again:
+
+Page refresh  
+↓  
+Socket reconnects  
+↓  
+Frontend requests saved notifications from the backend  
+↓  
+Backend gets notifications from MySQL  
+↓  
+Notifications appear in the bell dropdown
+
+So, WebSocket is mainly used for delivering **new notifications in real time**, while the database stores notifications so they can still be displayed after a refresh.
+
+
+
+
+
+ 4. Difference between `socketio.emit()` and `emit()`
+
+`socketio.emit()` is used from outside a Socket.IO event handler or when I want to send an event directly using the SocketIO server instance.
+
+Example:
+
+`socketio.emit("new_notification", data, room="admins")`
+
+This sends the notification to the specified room.
+
+`emit()` is normally used inside a `@socketio.on()` event handler. It sends an event as part of handling a socket event.
+
+Example:
+
+`@socketio.on("connect")`  
+`def handle_connect():`  
+`    emit("message", {"text": "Connected"})`
+
+So, the main difference is **where they are used and how the target is handled**. `socketio.emit()` uses the SocketIO server instance and can be used from normal server-side code, while `emit()` is commonly used inside a Socket.IO event handler for the current connection or specified targets.

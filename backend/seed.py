@@ -144,6 +144,9 @@ def seed_database():
         # CLEAR EXISTING DATA (order matters due to FKs)
         # --------------------------------------------------
         cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
+        cursor.execute("SHOW TABLES LIKE 'notifications'")
+        if cursor.fetchone():
+            cursor.execute("TRUNCATE TABLE notifications")
         cursor.execute("TRUNCATE TABLE ratings")
         cursor.execute("TRUNCATE TABLE wishlist")
         cursor.execute("TRUNCATE TABLE coupons")
@@ -158,7 +161,7 @@ def seed_database():
         # USERS
         # --------------------------------------------------
 
-        admin_password = bcrypt.generate_password_hash("admin123").decode("utf-8")
+        admin_password = bcrypt.generate_password_hash("TrendzCart@2026!").decode("utf-8")
         customer_password = bcrypt.generate_password_hash("customer123").decode("utf-8")
 
         cursor.execute(
@@ -303,8 +306,8 @@ def seed_database():
         print()
         print("Login credentials:")
         print("Admin:")
-        print("  Email: Trendadmin@ecommerce.com")
-        print("  Password: admin123")
+        print("  Email: trendadmin@ecommerce.com")
+        print("  Password: TrendzCart@2026!")
         print()
         print("Customer:")
         print("  Email: customer@ecommerce.com")

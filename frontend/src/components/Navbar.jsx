@@ -4,6 +4,7 @@ import { useCart } from '../context/CartContext'
 import { useWishlist } from '../context/WishlistContext'
 import { useTheme } from '../context/ThemeContext'
 import { getImageUrl } from '../api'
+import NotificationBell from './NotificationBell'
 
 export default function Navbar() {
   const { user, logout, isAdmin } = useAuth()
@@ -100,6 +101,8 @@ export default function Navbar() {
             )}
           </Link>
         )}
+
+        {user && <NotificationBell />}
 
         <button
           className="theme-toggle"

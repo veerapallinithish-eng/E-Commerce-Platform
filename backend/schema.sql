@@ -33,6 +33,20 @@ CREATE TABLE IF NOT EXISTS revoked_tokens (
 ) ENGINE=InnoDB;
 
 -- --------------------------------------------------
+-- NOTIFICATIONS
+-- --------------------------------------------------
+CREATE TABLE IF NOT EXISTS notifications (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  message VARCHAR(255) NOT NULL,
+  type ENUM('order', 'info', 'alert') NOT NULL DEFAULT 'info',
+  is_read BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_notifications_user_created (user_id, created_at),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- --------------------------------------------------
 -- CATEGORIES
 -- --------------------------------------------------
 CREATE TABLE IF NOT EXISTS categories (

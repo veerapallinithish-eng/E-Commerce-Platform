@@ -1,14 +1,16 @@
 import re
 import os
+import sys
 import uuid
 import smtplib
 import mysql.connector
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, session
 from flask_bcrypt import Bcrypt
 from flask_cors import CORS
+from flask_socketio import SocketIO, emit, join_room
 from flask_jwt_extended import (
     JWTManager,
     create_access_token,
@@ -63,6 +65,15 @@ CORS(
 )
 
 bcrypt = Bcrypt(app)
+socketio = SocketIO(
+    app,
+    cors_allowed_origins=[
+        f"http://{host}:{port}"
+        for host in ("localhost", "127.0.0.1", "[::1]")
+        for port in range(5173, 5181)
+    ],
+    async_mode=("threading" if os.name == "nt" or sys.version_info >= (3, 14) else "eventlet"),
+)
 
 # --------------------------------------------------
 # FILE UPLOAD CONFIGURATION
@@ -122,6 +133,20 @@ def get_db_connection():
             image_url VARCHAR(500) NOT NULL,
             display_order INT NOT NULL DEFAULT 0,
             FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB
+        """
+    )
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS notifications (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            message VARCHAR(255) NOT NULL,
+            type ENUM('order', 'info', 'alert') NOT NULL DEFAULT 'info',
+            is_read BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            INDEX idx_notifications_user_created (user_id, created_at)
         ) ENGINE=InnoDB
         """
     )
@@ -245,6 +270,55 @@ def admin_required(fn):
     return wrapper
 
 
+@socketio.on("connect")
+def on_socket_connect(auth):
+    token = (auth or {}).get("token")
+    if not token:
+        return False
+
+    try:
+        claims = decode_token(token)
+        if claims.get("type") != "access" or claims.get("purpose"):
+            return False
+        user_id = claims.get("sub")
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            cursor.execute("SELECT id, role FROM users WHERE id = %s", (user_id,))
+            user = cursor.fetchone()
+            cursor.execute("SELECT 1 FROM revoked_tokens WHERE jti = %s", (claims.get("jti"),))
+            revoked = cursor.fetchone() is not None
+        finally:
+            cursor.close()
+            conn.close()
+        if not user or revoked:
+            return False
+
+        session["socket_user"] = {"user_id": user["id"], "role": user["role"]}
+        app.logger.info("Socket client connected: %s", request.sid)
+    except Exception:
+        app.logger.exception("Socket authentication failed")
+        return False
+
+
+@socketio.on("disconnect")
+def on_socket_disconnect():
+    app.logger.info("Socket client disconnected: %s", request.sid)
+
+
+@socketio.on("join")
+def on_socket_join(_data=None):
+    authenticated_user = session.get("socket_user")
+    if not authenticated_user:
+        return False
+
+    room = f"user_{authenticated_user['user_id']}"
+    join_room(room)
+    if authenticated_user["role"] == "admin":
+        join_room("admins")
+    emit("joined", {"room": room})
+
+
 # --------------------------------------------------
 # AUTH ROUTES
 # --------------------------------------------------
@@ -312,8 +386,8 @@ def register():
 
 @app.route("/api/login", methods=["POST"])
 def login():
-    data = request.get_json()
-    email = data.get("email")
+    data = request.get_json() or {}
+    email = (data.get("email") or "").strip().lower()
     password = data.get("password")
 
     if not email or not password:
@@ -1439,7 +1513,39 @@ def create_order():
                 (quantity, product_id)
             )
 
+        cursor.execute("SELECT name FROM users WHERE id = %s", (user_id,))
+        customer_name = cursor.fetchone()["name"]
+        notification_message = (
+            f"New order #{order_id} placed by {customer_name} "
+            f"— ₹{total_amount:,.2f}"
+        )
+        cursor.execute("SELECT id FROM users WHERE role = 'admin'")
+        admin_notifications = []
+        for admin in cursor.fetchall():
+            cursor.execute(
+                "INSERT INTO notifications (user_id, message, type) VALUES (%s, %s, 'order')",
+                (admin["id"], notification_message),
+            )
+            admin_notifications.append({
+                "user_id": admin["id"],
+                "id": cursor.lastrowid,
+            })
+
         conn.commit()
+
+        for notification in admin_notifications:
+            socketio.emit(
+                "new_notification",
+                {
+                    "id": notification["id"],
+                    "message": notification_message,
+                    "type": "order",
+                    "order_id": order_id,
+                    "is_read": False,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                },
+                room=f"user_{notification['user_id']}",
+            )
 
         return jsonify({
             "message": "Order placed successfully",
@@ -1454,6 +1560,87 @@ def create_order():
         app.logger.exception("Failed to create order")
         return jsonify({"error": "Could not place order, please try again"}), 500
 
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route("/api/notifications", methods=["GET"])
+@login_required
+def get_notifications():
+    user_id = get_jwt_identity()
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+            SELECT id, message, type, is_read, created_at
+            FROM notifications
+            WHERE user_id = %s
+            ORDER BY created_at DESC, id DESC
+            """,
+            (user_id,),
+        )
+        notifications = cursor.fetchall()
+        for notification in notifications:
+            notification["is_read"] = bool(notification["is_read"])
+            notification["created_at"] = notification["created_at"].isoformat()
+        return jsonify(notifications), 200
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route("/api/notifications/<int:notification_id>/read", methods=["PUT"])
+@login_required
+def mark_notification_read(notification_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE notifications SET is_read = TRUE WHERE id = %s AND user_id = %s",
+            (notification_id, get_jwt_identity()),
+        )
+        conn.commit()
+        if cursor.rowcount == 0:
+            return jsonify({"error": "Notification not found"}), 404
+        return jsonify({"message": "Notification marked as read"}), 200
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route("/api/notifications/read-all", methods=["PUT"])
+@login_required
+def mark_all_notifications_read():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE notifications SET is_read = TRUE WHERE user_id = %s AND is_read = FALSE",
+            (get_jwt_identity(),),
+        )
+        conn.commit()
+        return jsonify({"message": "All notifications marked as read"}), 200
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route("/api/notifications/<int:notification_id>", methods=["DELETE"])
+@login_required
+def delete_notification(notification_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "DELETE FROM notifications WHERE id = %s AND user_id = %s",
+            (notification_id, get_jwt_identity()),
+        )
+        conn.commit()
+        if cursor.rowcount == 0:
+            return jsonify({"error": "Notification not found"}), 404
+        return jsonify({"message": "Notification deleted"}), 200
     finally:
         cursor.close()
         conn.close()
@@ -1586,4 +1773,4 @@ def update_order_status(order_id):
 # --------------------------------------------------
 
 if __name__ == "__main__":
-    app.run(debug=False, port=5000)
+    socketio.run(app, debug=False, port=5000)
